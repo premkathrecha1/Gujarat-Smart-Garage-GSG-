@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+ 
+    // ── Users ────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Any authenticated user can read their own document
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Users can create their own profile on signup
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Users can update their own profile (not role field)
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+      // Only admin can delete users (handled server-side via Admin SDK)
+      allow delete: if false;
+    }
+ 
+    // ── Cars ─────────────────────────────────────────────────────────────────
+    match /cars/{carId} {
+      // Car owner can read their own cars
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Car owner can create a car for themselves
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Car owner can update/delete their own car
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+ 
+    // ── Work Posts ────────────────────────────────────────────────────────────
+    match /workPosts/{postId} {
+      // Any authenticated user can read open (non-deleted) posts
+      allow read: if request.auth != null;
+      // Garage owners can create posts
+      allow create: if request.auth != null && request.resource.data.garageId == request.auth.uid;
+      // Garage owner can update/soft-delete their own posts
+      // Any authenticated user can update isAccepted (to accept the job)
+      allow update: if request.auth != null && (
+        resource.data.garageId == request.auth.uid ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isAccepted', 'acceptedBy', 'acceptedByName', 'acceptedAt', 'updatedAt'])
+         && request.resource.data.isAccepted == true)
+      );
+      allow delete: if false; // use soft delete (isDeleted flag)
+    }
+ 
+    // ── Admin collection (no client reads) ────────────────────────────────────
+    match /admins/{adminId} {
+      allow read, write: if false;
+    }
+  }
+}
